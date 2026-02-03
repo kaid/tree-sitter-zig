@@ -1,17 +1,15 @@
 const testing = @import("std").testing;
 
-const ts = @import("tree-sitter");
 const root = @import("tree-sitter-zig");
-const Language = ts.Language;
-const Parser = ts.Parser;
+const c = @cImport({
+    @cInclude("tree_sitter/api.h");
+});
 
 test "can load grammar" {
-    const parser = Parser.create();
-    defer parser.destroy();
+    const parser = c.ts_parser_new().?;
+    defer c.ts_parser_delete(parser);
 
-    const lang: *const ts.Language = @ptrCast(root.language());
-    defer lang.destroy();
-
-    try testing.expectEqual(void{}, parser.setLanguage(lang));
-    try testing.expectEqual(lang, parser.getLanguage());
+    const lang: *const c.TSLanguage = @ptrCast(@alignCast(root.language()));
+    try testing.expect(c.ts_parser_set_language(parser, lang));
+    try testing.expectEqual(lang, c.ts_parser_language(parser).?);
 }

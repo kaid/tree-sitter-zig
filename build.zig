@@ -20,12 +20,12 @@ pub fn build(b: *std.Build) !void {
         }),
     });
 
-    lib.addCSourceFile(.{
+    lib.root_module.addCSourceFile(.{
         .file = b.path("src/parser.c"),
         .flags = &.{"-std=c11"},
     });
     if (fileExists(b, "src/scanner.c")) {
-        lib.addCSourceFile(.{
+        lib.root_module.addCSourceFile(.{
             .file = b.path("src/scanner.c"),
             .flags = &.{"-std=c11"},
         });
@@ -38,7 +38,7 @@ pub fn build(b: *std.Build) !void {
         lib.root_module.addCMacro("TREE_SITTER_DEBUG", "");
     }
 
-    lib.addIncludePath(b.path("src"));
+    lib.root_module.addIncludePath(b.path("src"));
 
     b.installArtifact(lib);
     b.installFile("src/node-types.json", "node-types.json");
@@ -64,30 +64,70 @@ pub fn build(b: *std.Build) !void {
             .root_source_file = b.path("bindings/zig/test.zig"),
             .target = target,
             .optimize = optimize,
+            .link_libc = true,
         }),
     });
     tests.root_module.addImport(library_name, module);
 
-    // HACK: fetch tree-sitter dependency only when testing this module
-    if (b.pkg_hash.len == 0) {
-        var args = try std.process.argsWithAllocator(b.allocator);
-        defer args.deinit();
-        while (args.next()) |a| {
-            if (std.mem.eql(u8, a, "test")) {
-                const ts_dep = b.lazyDependency("tree_sitter", .{}) orelse continue;
-                tests.root_module.addImport("tree-sitter", ts_dep.module("tree-sitter"));
-                break;
-            }
+    const run_tests = b.addRunArtifact(tests);
+    const test_step = b.step("test", "Run unit tests");
+    const fetch_deps = b.option(
+        bool,
+        "fetch-deps",
+        "Fetch lazy dependencies required for running 'zig build test'",
+    ) orelse false;
+
+    const ts_dep: *std.Build.Dependency = blk: {
+        if (b.lazyDependency("tree_sitter", .{})) |dep| break :blk dep;
+        if (fetch_deps) break :blk b.dependency("tree_sitter", .{});
+
+        const fail = std.Build.Step.Fail.create(b,
+            "Lazy dependency 'tree_sitter' is not available.\n" ++
+                "Re-run with: zig build -Dfetch-deps test\n",
+        );
+        test_step.dependOn(&fail.step);
+        return;
+    };
+
+    const ts_lib = ts_dep.artifact("tree-sitter");
+    tests.root_module.addIncludePath(ts_dep.path("lib/include"));
+    tests.root_module.linkLibrary(ts_lib);
+    test_step.dependOn(&run_tests.step);
+    // const fetch_deps = b.option(
+    //     bool,
+    //     "fetch-deps",
+    //     "Fetch lazy dependencies required for running 'zig build test'",
+    // ) orelse false;
+    // if (fetch_deps or dependencyAvailable(b, "tree_sitter")) {
+    // } else {
+    //     const fail = std.Build.Step.Fail.create(b,
+    //         "Lazy dependency 'tree_sitter' is not available.\n" ++
+    //             "Re-run with: zig build -Dfetch-deps test\n",
+    //     );
+    //     test_step.dependOn(&fail.step);
+    // }
+}
+
+inline fn dependencyAvailable(b: *std.Build, name: []const u8) bool {
+    const build_runner = @import("root");
+    const deps = build_runner.dependencies;
+
+    const pkg_hash = for (b.available_deps) |dep| {
+        if (std.mem.eql(u8, dep[0], name)) break dep[1];
+    } else return false;
+
+    inline for (@typeInfo(deps.packages).@"struct".decls) |decl| {
+        if (std.mem.eql(u8, decl.name, pkg_hash)) {
+            const pkg = @field(deps.packages, decl.name);
+            return !@hasDecl(pkg, "available") or pkg.available;
         }
     }
 
-    const run_tests = b.addRunArtifact(tests);
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_tests.step);
+    return false;
 }
 
 inline fn fileExists(b: *std.Build, filename: []const u8) bool {
     const dir = b.build_root.handle;
-    dir.access(filename, .{}) catch return false;
+    dir.access(b.graph.io, filename, .{}) catch return false;
     return true;
 }
