@@ -22,12 +22,18 @@ pub fn build(b: *std.Build) !void {
 
     lib.root_module.addCSourceFile(.{
         .file = b.path("src/parser.c"),
-        .flags = &.{"-std=c11"},
+        .flags = &.{
+            "-std=c11",
+            "-fno-sanitize=undefined",
+        },
     });
     if (fileExists(b, "src/scanner.c")) {
         lib.root_module.addCSourceFile(.{
             .file = b.path("src/scanner.c"),
-            .flags = &.{"-std=c11"},
+            .flags = &.{
+                "-std=c11",
+                "-fno-sanitize=undefined",
+            },
         });
     }
 
@@ -81,7 +87,8 @@ pub fn build(b: *std.Build) !void {
         if (b.lazyDependency("tree_sitter", .{})) |dep| break :blk dep;
         if (fetch_deps) break :blk b.dependency("tree_sitter", .{});
 
-        const fail = std.Build.Step.Fail.create(b,
+        const fail = std.Build.Step.Fail.create(
+            b,
             "Lazy dependency 'tree_sitter' is not available.\n" ++
                 "Re-run with: zig build -Dfetch-deps test\n",
         );
