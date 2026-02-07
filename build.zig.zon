@@ -6,7 +6,7 @@
     .dependencies = .{
         .tree_sitter = .{
             .url = "https://github.com/kaid/tree-sitter/archive/refs/heads/zig-nightly.tar.gz",
-            .hash = "tree_sitter-0.27.0-Tw2sRyOyCwBxM1ETeWLS-iCpPYgj8GCKCu3c0J_aoCRJ",
+            .hash = "tree_sitter-0.27.0-Tw2sR7ayCwCddNfks94C4ftYXtGa8OTMkv-RmZZbzKeL",
             .lazy = true,
         },
     },
